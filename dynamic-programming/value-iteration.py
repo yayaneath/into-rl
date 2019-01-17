@@ -32,7 +32,7 @@ def value_iteration(env, max_iter, discount):
                     # here, the reward is linked to the triplet <s, a, s'>
                     # in some other cases it is only linked to the tuple <s, a>
                     # the only difference is notation and numerically the resulting values change
-                    # but the logic is the same (the resulting policy that can be express is the identical)
+                    # but the logic is the same (the resulting policy that can be expressed is identical)
 
                     # p(s, a, s') * [r(s, a, s') + gamma * v(s')]
                     action_value += prob * (reward + discount * values_old[next_s])

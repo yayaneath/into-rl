@@ -102,7 +102,7 @@ def check_policy_performance(env, policy, max_episodes):
 
 if __name__ == '__main__':
     env = gym.make('FrozenLake-v0')
-    max_iterations = 10000
+    max_iterations = 20000
     max_episodes = 1000
     gamma = 0.98
 
