@@ -2,14 +2,6 @@ import gym
 import time
 import numpy as np
 
-def check_policy_performance(env, policy, max_episodes):
-    scores = []
-    
-    for _ in range(max_episodes):
-        scores.append(run_env(env, policy))
-
-    return np.mean(scores)
-
 def generate_episode_data(env, policy, render=False):
     finished = False
     states = []
