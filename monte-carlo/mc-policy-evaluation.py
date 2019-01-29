@@ -65,7 +65,10 @@ if __name__ == '__main__':
     env = gym.make('FrozenLake-v0')
     num_episodes = 50000
     gamma = 0.98
-    policy = [0, 3, 3, 3, 0, 0, 0, 0, 3, 1, 0, 0, 0, 2, 1, 0] # Obtained from policy iteration
+    policy = [0, 3, 3, 3, 
+              0, 0, 0, 0,
+              3, 1, 0, 0,
+              0, 2, 1, 0] # Obtained from policy iteration
     
     start_time = time.time()
     policy_values = mc_policy_evaluation(env, policy, num_episodes, gamma)
