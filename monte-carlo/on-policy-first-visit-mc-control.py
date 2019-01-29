@@ -74,14 +74,11 @@ def on_policy_mc_control(num_episodes, env, epsilon, gamma):
             q_values[state][action] = states_actions_returns[state][action] / states_actions_visits[state][action]
 
             # Improve Policy
-            if np.max(q_values[state]) == 0.0:
-                policy[state] = 0
-            else:
-                policy[state] = np.argmax(q_values[state])
+            policy[state] = np.argmax(q_values[state])
 
     values = np.max(q_values, axis=1)
     print(values.reshape(4, 4))
-    
+
     # Change actions at those state that are never visited or have 0.0 value
     policy = np.argmax(q_values, axis=1)
 
