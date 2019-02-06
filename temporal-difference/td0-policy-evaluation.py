@@ -15,7 +15,7 @@ def td0_policy_evaluation(env, policy, num_episodes, gamma, alpha):
         while not finished:
             new_obs, reward, finished, _ = env.step(policy[obs])
 
-            # V(S) <- V(S) + alpha[R + gamma * V(S') - V(S)]
+            # V(s) <- V(s) + alpha[R + gamma * V(s') - V(s)]
             values[obs] = values[obs] + alpha * (reward + gamma * values[new_obs] - values[obs])
 
             obs = new_obs
