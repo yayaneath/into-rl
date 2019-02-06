@@ -13,7 +13,7 @@ def pick_e_greedy_action(q_values, state, actions, epsilon):
 
     return action
 
-def sarsa(env, num_episodes, gamma, alpha, epsilon):
+def q_learning(env, num_episodes, gamma, alpha, epsilon):
     q_values = np.zeros((env.observation_space.n, env.action_space.n))
     env_actions = range(env.action_space.n)
 
@@ -26,21 +26,17 @@ def sarsa(env, num_episodes, gamma, alpha, epsilon):
         # Initialize s
         obs = env.reset()
 
-        # Chose a using policy derived from Q (e-greedy)
-        action = pick_e_greedy_action(q_values, obs, env_actions, epsilon)
+        while not finished:
+            # Chose a using policy derived from Q (e-greedy)
+            action = pick_e_greedy_action(q_values, obs, env_actions, epsilon)
 
-        while not finished:            
             # Take action a and observe r, s'
             new_obs, reward, finished, _ = env.step(action)
 
-            # Chose a' using policy derived from Q (e-greedy)
-            new_action = pick_e_greedy_action(q_values, new_obs, env_actions, epsilon)
-
-            # Q(s,a) <- Q(s,a) + alpha[R + gamma * Q(s',a') - Q(s,a)]
-            q_values[obs][action] = q_values[obs][action] + alpha * (reward + gamma * q_values[new_obs][new_action] - q_values[obs][action])
+            # Q(s,a) <- Q(s,a) + alpha[R + gamma * max Q(s') - Q(s,a)]
+            q_values[obs][action] = q_values[obs][action] + alpha * (reward + gamma * np.max(q_values[new_obs]) - q_values[obs][action])
 
             obs = new_obs
-            action = new_action
 
     # Caculate V from Q
     values = np.max(q_values, axis=1)
@@ -60,7 +56,7 @@ if __name__ == '__main__':
     epsilon = 0.2
     
     start_time = time.time()
-    policy_values = sarsa(env, num_episodes, gamma, alpha, epsilon)
+    policy_values = q_learning(env, num_episodes, gamma, alpha, epsilon)
     end_time = time.time()
 
-    print('Sarsa took', end_time - start_time, 'seconds')
+    print('Q-Learning took', end_time - start_time, 'seconds')
