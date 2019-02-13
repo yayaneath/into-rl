@@ -1,6 +1,7 @@
 import gym
 import time
 import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -42,13 +43,20 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    net = Net(obs_space_size, act_space_size).to(device)
+    # We need an e-greedy exploratory policy and a target policy
+    exp_policy = Net(obs_space_size, act_space_size).to(device)
+    target_policy = Net(obs_space_size, act_space_size).to(device)
+    
     mse_loss = nn.MSELoss()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(exp_policy.parameters(), lr=learning_rate)
+
+    rewards = []
 
     for ep in range(num_episodes):
-        if (ep % 1 == 0):
+        # Update the target policy every X episores
+        if (ep % 10 == 0):
             print('=> Evaluating episode', ep)
+            target_policy.load_state_dict(exp_policy.state_dict())
 
         finished = False
         ep_reward = 0.0
@@ -62,7 +70,7 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
                 env.render()
             
             # Chose a using policy derived from Q (e-greedy)
-            action = pick_e_greedy_action(net, obs, env_actions, epsilon)
+            action = pick_e_greedy_action(exp_policy, obs, env_actions, epsilon)
 
             # Take action a and observe r, s'
             new_obs, reward, finished, _ = env.step(action)
@@ -70,17 +78,17 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
             # Set grads to zero
             optimizer.zero_grad()
 
-            # Q(s,.)
-            q_values = net(obs)[action]
+            # Q(s,a)
+            q_value = exp_policy(obs)[action]
 
             # TD Target = r + gamma * max Q(s',.)
             new_obs = torch.from_numpy(new_obs).to(device, dtype=torch.float)
 
-            q_values_next = net(new_obs)
-            td_target = reward + gamma * torch.max(q_values_next)
+            next_state_q_values = target_policy(new_obs)
+            td_target = reward + gamma * torch.max(next_state_q_values)
 
             # Calculate loss between guess and target
-            loss = mse_loss(q_values, td_target)
+            loss = mse_loss(q_value, td_target)
             
             # Optimize
             loss.backward()
@@ -89,22 +97,36 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
             obs = new_obs
             ep_reward += reward
         
-        if (ep % 1 == 0):
-            print('=> Total reward:', ep_reward)
+        if (ep % 10 == 0):
+            print('Total reward:', ep_reward)
+            print('Epsilon:', epsilon)
 
-        epsilon -= 0.0001
+        epsilon -= 0.00002
+        rewards.append(ep_reward)
 
-    return net
+    return td_target, rewards
 
 if __name__ == '__main__':
     env = gym.make('MountainCar-v0')
-    num_episodes = 50000
+    num_episodes = 10000
     gamma = 0.98
-    epsilon = 1.0
+    epsilon = 0.2
     learning_rate = 0.01
 
     start_time = time.time()
-    q_net = q_learning(env, num_episodes, gamma, epsilon, learning_rate)
+    q_net, rewards = q_learning(env, num_episodes, gamma, epsilon, learning_rate)
     end_time = time.time()
 
     print('Q-Learning (linear approx) took', end_time - start_time, 'seconds')
+
+    file_name = 'q-net-' + str(np.mean(rewards)) + '-' + str(end_time)
+    torch.save(q_net.state_dict(), file_name)
+
+    _, ax = plt.subplots()
+
+    ax.plot(rewards)
+    ax.set(xlabel='episode', ylabel='total reward',
+           title='Final reward by training episode')
+    ax.grid()
+
+    plt.show()
