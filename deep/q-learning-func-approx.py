@@ -37,9 +37,9 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
     act_space_size = env.action_space.n
     env_actions = range(env.action_space.n)
 
-    # This could be useful for normalising the observations
-    #print(env.observation_space.high)
-    #print(env.observation_space.low)
+    # Needed to scale features
+    min_pos, min_vel = env.observation_space.low
+    max_pos, max_vel = env.observation_space.high
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -51,18 +51,26 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
     optimizer = optim.Adam(exp_policy.parameters(), lr=learning_rate)
 
     rewards = []
+    losses = []
 
     for ep in range(num_episodes):
         # Update the target policy every X episores
-        if (ep % 10 == 0):
+        if (ep % 1 == 0):
             print('=> Evaluating episode', ep)
+
+        if (ep % 10 == 0):
             target_policy.load_state_dict(exp_policy.state_dict())
 
         finished = False
         ep_reward = 0.0
+        ep_loss = []
 
         # Initialize s
-        obs = env.reset()
+        obs_pos, obs_vel = env.reset()
+        scaled_obs_pos = (obs_pos - min_pos) / (max_pos - min_pos)
+        scaled_obs_vel = (obs_vel - min_vel) / (max_vel - min_vel)
+        obs = np.array([scaled_obs_pos, scaled_obs_vel])
+
         obs = torch.from_numpy(obs).to(device, dtype=torch.float)
 
         while not finished:
@@ -74,6 +82,11 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
 
             # Take action a and observe r, s'
             new_obs, reward, finished, _ = env.step(action)
+
+            new_obs_pos, new_obs_vel = new_obs
+            scaled_new_obs_pos = (new_obs_pos - min_pos) / (max_pos - min_pos)
+            scaled_new_obs_vel = (new_obs_vel - min_vel) / (max_vel - min_vel)
+            new_obs = np.array([scaled_new_obs_pos, scaled_new_obs_vel])
 
             # Set grads to zero
             optimizer.zero_grad()
@@ -96,13 +109,18 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
 
             obs = new_obs
             ep_reward += reward
+            ep_loss.append(loss.item())
+
+        avg_loss = np.mean(ep_loss)
         
-        if (ep % 10 == 0):
+        if (ep % 1 == 0):
             print('Total reward:', ep_reward)
+            print('Avg Loss:', avg_loss)
             print('Epsilon:', epsilon)
 
         epsilon -= 0.00002
         rewards.append(ep_reward)
+        losses.append(avg_loss)
 
     return td_target, rewards
 
@@ -111,7 +129,7 @@ if __name__ == '__main__':
     num_episodes = 10000
     gamma = 0.98
     epsilon = 0.2
-    learning_rate = 0.01
+    learning_rate = 0.1
 
     start_time = time.time()
     q_net, rewards = q_learning(env, num_episodes, gamma, epsilon, learning_rate)
@@ -120,7 +138,7 @@ if __name__ == '__main__':
     print('Q-Learning (linear approx) took', end_time - start_time, 'seconds')
 
     file_name = 'q-net-' + str(np.mean(rewards)) + '-' + str(end_time)
-    torch.save(q_net.state_dict(), file_name)
+    #torch.save(q_net.state_dict(), file_name)
 
     _, ax = plt.subplots()
 
