@@ -98,7 +98,11 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
             new_obs = torch.from_numpy(new_obs).to(device, dtype=torch.float)
 
             next_state_q_values = target_policy(new_obs)
+            next_state_q_values = next_state_q_values.detach()
             td_target = reward + gamma * torch.max(next_state_q_values)
+
+            if finished:
+                td_target = torch.tensor(reward).to(device, dtype=torch.float)
 
             # Calculate loss between guess and target
             loss = mse_loss(q_value, td_target)
@@ -122,14 +126,14 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
         rewards.append(ep_reward)
         losses.append(avg_loss)
 
-    return td_target, rewards
+    return target_policy, rewards
 
 if __name__ == '__main__':
     env = gym.make('MountainCar-v0')
     num_episodes = 10000
     gamma = 0.98
     epsilon = 0.2
-    learning_rate = 0.1
+    learning_rate = 0.01
 
     start_time = time.time()
     q_net, rewards = q_learning(env, num_episodes, gamma, epsilon, learning_rate)
@@ -138,10 +142,11 @@ if __name__ == '__main__':
     print('Q-Learning (linear approx) took', end_time - start_time, 'seconds')
 
     file_name = 'q-net-' + str(np.mean(rewards)) + '-' + str(end_time)
-    #torch.save(q_net.state_dict(), file_name)
+    torch.save(q_net.state_dict(), file_name)
 
     _, ax = plt.subplots()
 
+    # Plot an average reward within a window of 25 episodes?
     ax.plot(rewards)
     ax.set(xlabel='episode', ylabel='total reward',
            title='Final reward by training episode')
