@@ -130,9 +130,9 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
 
 if __name__ == '__main__':
     env = gym.make('MountainCar-v0')
-    num_episodes = 10000
+    num_episodes = 5000
     gamma = 0.98
-    epsilon = 0.2
+    epsilon = 0.6
     learning_rate = 0.01
 
     start_time = time.time()
@@ -146,9 +146,12 @@ if __name__ == '__main__':
 
     _, ax = plt.subplots()
 
-    # Plot an average reward within a window of 25 episodes?
-    ax.plot(rewards)
-    ax.set(xlabel='episode', ylabel='total reward',
+    window_size = 25
+    stride = 1
+    window_avg = [ np.mean(rewards[i : i + window_size]) for i in range(0, len(rewards), stride) if i + window_size <= len(rewards) ]
+
+    ax.plot(window_avg)
+    ax.set(xlabel='episode (avg 25)', ylabel='total reward',
            title='Final reward by training episode')
     ax.grid()
 
