@@ -1,0 +1,9 @@
+env = gym.make('CartPole-v0')
+num_episodes = 600
+gamma = 0.98
+epsilon = 0.4
+learning_rate = 0.01
+buffer_size = 1000
+batch_size = 32
+
+727 seconds

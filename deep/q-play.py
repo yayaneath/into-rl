@@ -11,35 +11,35 @@ RENDER_ENV = True
 class Net(nn.Module):
     def __init__(self, input_size, output_size):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(input_size, output_size)
+        self.fc1 = nn.Linear(input_size, int(input_size / 2))
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(int(input_size / 2), output_size)
 
     def forward(self, x):
-        x = self.fc1(x)
+        out = self.fc1(x)
+        out = self.relu(out)
+        out = self.fc2(out)
 
-        return x
+        return out
 
 if __name__ == '__main__':
-    env = gym.make('MountainCar-v0')
+    #model_file = sys.argv[1]
+    model_file = 'q-net-20.202312138728324'
+
+    env = gym.make('CartPole-v0') #('MountainCar-v0')
 
     obs_space_size = env.observation_space.shape[0]
     act_space_size = env.action_space.n
-
-    min_pos, min_vel = env.observation_space.low
-    max_pos, max_vel = env.observation_space.high
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Load Q-net
     policy = Net(obs_space_size, act_space_size).to(device)
-    policy.load_state_dict(torch.load(sys.argv[1]))
+    policy.load_state_dict(torch.load(model_file))
     policy.eval()
 
     # Initialize s
-    obs_pos, obs_vel = env.reset()
-    scaled_obs_pos = (obs_pos - min_pos) / (max_pos - min_pos)
-    scaled_obs_vel = (obs_vel - min_vel) / (max_vel - min_vel)
-    obs = np.array([scaled_obs_pos, scaled_obs_vel])
-
+    obs = env.reset()
 
     ep_reward = 0.0
     finished = False
@@ -59,11 +59,6 @@ if __name__ == '__main__':
 
         # Take action a and observe r, s'
         obs, reward, finished, _ = env.step(action)
-
-        obs_pos, obs_vel = obs
-        scaled_obs_pos = (obs_pos - min_pos) / (max_pos - min_pos)
-        scaled_obs_vel = (obs_vel - min_vel) / (max_vel - min_vel)
-        obs = np.array([scaled_obs_pos, scaled_obs_vel])
 
         ep_reward += reward
         steps += 1

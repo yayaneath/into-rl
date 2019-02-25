@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-RENDER_ENV = True
+RENDER_ENV = False
 
 class ExperienceReplay:
     def __init__(self, capacity):
@@ -161,9 +161,9 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
 
 if __name__ == '__main__':
     env = gym.make('CartPole-v0') #('MountainCar-v0')
-    num_episodes = 5000
+    num_episodes = 600
     gamma = 0.98
-    epsilon = 0.2
+    epsilon = 0.4
     learning_rate = 0.01
     buffer_size = 1000
     batch_size = 32
