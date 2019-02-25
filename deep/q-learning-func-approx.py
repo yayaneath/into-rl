@@ -3,12 +3,16 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 
+import sklearn.preprocessing
+import sklearn.pipeline
+from sklearn.kernel_approximation import RBFSampler
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-RENDER_ENV = True
+RENDER_ENV = False
 
 class Net(nn.Module):
     def __init__(self, input_size, output_size):
@@ -32,20 +36,40 @@ def pick_e_greedy_action(q_net, state, actions, epsilon):
 
     return action
 
+
+def featurise_state(scaler, featurizer, state):
+    scaled = scaler.transform([state])
+    featurized = featurizer.transform(scaled)
+    
+    return featurized[0]
+
 def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
-    obs_space_size = env.observation_space.shape[0]
+    #obs_space_size = env.observation_space.shape[0]
     act_space_size = env.action_space.n
     env_actions = range(env.action_space.n)
 
-    # Needed to scale features
-    min_pos, min_vel = env.observation_space.low
-    max_pos, max_vel = env.observation_space.high
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+    # Feature Preprocessing: Normalise to zero mean and unit variance
+    # We use a few samples from the observation space to do this
+    observation_examples = np.array([env.observation_space.sample() for x in range(10000)])
+    scaler = sklearn.preprocessing.StandardScaler()
+    scaler.fit(observation_examples)
+
+    # Used to convert a state to a featurises represenation.
+    # We use RBF kernels with different variances to cover different parts of the space
+    features_size = 400
+    featuriser = sklearn.pipeline.FeatureUnion([
+            ("rbf1", RBFSampler(gamma=5.0, n_components=100)),
+            ("rbf2", RBFSampler(gamma=2.0, n_components=100)),
+            ("rbf3", RBFSampler(gamma=1.0, n_components=100)),
+            ("rbf4", RBFSampler(gamma=0.5, n_components=100))
+            ])
+    featuriser.fit(scaler.transform(observation_examples))
+
     # We need an e-greedy exploratory policy and a target policy
-    exp_policy = Net(obs_space_size, act_space_size).to(device)
-    target_policy = Net(obs_space_size, act_space_size).to(device)
+    exp_policy = Net(features_size, act_space_size).to(device)
+    target_policy = Net(features_size, act_space_size).to(device)
     
     mse_loss = nn.MSELoss()
     optimizer = optim.Adam(exp_policy.parameters(), lr=learning_rate)
@@ -66,12 +90,9 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
         ep_loss = []
 
         # Initialize s
-        obs_pos, obs_vel = env.reset()
-        scaled_obs_pos = (obs_pos - min_pos) / (max_pos - min_pos)
-        scaled_obs_vel = (obs_vel - min_vel) / (max_vel - min_vel)
-        obs = np.array([scaled_obs_pos, scaled_obs_vel])
-
-        obs = torch.from_numpy(obs).to(device, dtype=torch.float)
+        obs = env.reset()
+        obs_feat = featurise_state(scaler, featuriser, obs)
+        obs = torch.from_numpy(obs_feat).to(device, dtype=torch.float)
 
         while not finished:
             if RENDER_ENV:
@@ -83,10 +104,8 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
             # Take action a and observe r, s'
             new_obs, reward, finished, _ = env.step(action)
 
-            new_obs_pos, new_obs_vel = new_obs
-            scaled_new_obs_pos = (new_obs_pos - min_pos) / (max_pos - min_pos)
-            scaled_new_obs_vel = (new_obs_vel - min_vel) / (max_vel - min_vel)
-            new_obs = np.array([scaled_new_obs_pos, scaled_new_obs_vel])
+            obs_feat = featurise_state(scaler, featuriser, new_obs)
+            new_obs = torch.from_numpy(obs_feat).to(device, dtype=torch.float)
 
             # Set grads to zero
             optimizer.zero_grad()
@@ -95,8 +114,6 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
             q_value = exp_policy(obs)[action]
 
             # TD Target = r + gamma * max Q(s',.)
-            new_obs = torch.from_numpy(new_obs).to(device, dtype=torch.float)
-
             next_state_q_values = target_policy(new_obs)
             next_state_q_values = next_state_q_values.detach()
             td_target = reward + gamma * torch.max(next_state_q_values)
