@@ -3,6 +3,8 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 
+from collections import deque
+
 import sklearn.preprocessing
 import sklearn.pipeline
 from sklearn.kernel_approximation import RBFSampler
@@ -12,17 +14,37 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-RENDER_ENV = False
+RENDER_ENV = True
+
+class ExperienceReplay:
+    def __init__(self, capacity):
+        self.buffer = deque(maxlen=capacity)
+
+    def append(self, experience):
+        self.buffer.append(experience)
+
+    def __len__(self):
+        return len(self.buffer)
+
+    def sample(self, batch_size):
+        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        batch = [self.buffer[idx] for idx in indices]
+
+        return batch
 
 class Net(nn.Module):
     def __init__(self, input_size, output_size):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(input_size, output_size)
+        self.fc1 = nn.Linear(input_size, int(input_size / 2))
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(int(input_size / 2), output_size)
 
     def forward(self, x):
-        x = self.fc1(x)
+        out = self.fc1(x)
+        out = self.relu(out)
+        out = self.fc2(out)
 
-        return x
+        return out
 
 def pick_e_greedy_action(q_net, state, actions, epsilon):
     prob = np.random.rand()
@@ -31,68 +53,68 @@ def pick_e_greedy_action(q_net, state, actions, epsilon):
     if prob < epsilon:
         action = np.random.choice(actions)
     else:
-        _, action = torch.max(q_net(state), 0)
-        action = action.item()
+        with torch.no_grad():
+            _, action = torch.max(q_net(state), 0)
+            action = action.item()
 
     return action
 
+def calculate_loss(device, exp_policy, target_policy, experiences, gamma, criterion_loss):
+    loss = 0
 
-def featurise_state(scaler, featurizer, state):
-    scaled = scaler.transform([state])
-    featurized = featurizer.transform(scaled)
-    
-    return featurized[0]
+    for state, action, reward, next_state, done in experiences:
+        # Q(s,a)
+        q_value = exp_policy(state)[action]
 
-def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
-    #obs_space_size = env.observation_space.shape[0]
+        # TD Target = r + gamma * max Q(s',.)
+        next_state_q_values = target_policy(next_state)
+        next_state_q_values = next_state_q_values.detach()
+        td_target = reward + gamma * torch.max(next_state_q_values)
+
+        if done:
+            td_target = torch.tensor(reward).to(device, dtype=torch.float)
+
+        # Calculate loss between guess and target
+        loss = loss + criterion_loss(q_value, td_target)
+        
+    loss = loss / len(experiences)
+
+    return loss
+
+def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, batch_size):
+    features_size = env.observation_space.shape[0]
     act_space_size = env.action_space.n
     env_actions = range(env.action_space.n)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # Feature Preprocessing: Normalise to zero mean and unit variance
-    # We use a few samples from the observation space to do this
-    observation_examples = np.array([env.observation_space.sample() for x in range(10000)])
-    scaler = sklearn.preprocessing.StandardScaler()
-    scaler.fit(observation_examples)
-
-    # Used to convert a state to a featurises represenation.
-    # We use RBF kernels with different variances to cover different parts of the space
-    features_size = 400
-    featuriser = sklearn.pipeline.FeatureUnion([
-            ("rbf1", RBFSampler(gamma=5.0, n_components=100)),
-            ("rbf2", RBFSampler(gamma=2.0, n_components=100)),
-            ("rbf3", RBFSampler(gamma=1.0, n_components=100)),
-            ("rbf4", RBFSampler(gamma=0.5, n_components=100))
-            ])
-    featuriser.fit(scaler.transform(observation_examples))
-
     # We need an e-greedy exploratory policy and a target policy
     exp_policy = Net(features_size, act_space_size).to(device)
     target_policy = Net(features_size, act_space_size).to(device)
     
-    mse_loss = nn.MSELoss()
-    optimizer = optim.Adam(exp_policy.parameters(), lr=learning_rate)
+    criterion_loss = nn.MSELoss()
+    optimiser = optim.Adam(exp_policy.parameters(), lr=learning_rate)
+
+    # Initialise replay buffer
+    replay_buffer = ExperienceReplay(buffer_size)
 
     rewards = []
-    losses = []
 
-    for ep in range(num_episodes):
-        # Update the target policy every X episores
+    for ep in range(num_episodes + 1):
         if (ep % 1 == 0):
             print('=> Evaluating episode', ep)
-
-        if (ep % 10 == 0):
+            
+        # Update the target policy every X episores
+        if (ep % 50 == 0):
             target_policy.load_state_dict(exp_policy.state_dict())
+            target_policy.eval()
 
         finished = False
         ep_reward = 0.0
-        ep_loss = []
 
         # Initialize s
         obs = env.reset()
-        obs_feat = featurise_state(scaler, featuriser, obs)
-        obs = torch.from_numpy(obs_feat).to(device, dtype=torch.float)
+        obs = torch.from_numpy(obs).to(device, dtype=torch.float)
 
         while not finished:
             if RENDER_ENV:
@@ -104,56 +126,50 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate):
             # Take action a and observe r, s'
             new_obs, reward, finished, _ = env.step(action)
 
-            obs_feat = featurise_state(scaler, featuriser, new_obs)
-            new_obs = torch.from_numpy(obs_feat).to(device, dtype=torch.float)
+            new_obs = torch.from_numpy(new_obs).to(device, dtype=torch.float)
 
-            # Set grads to zero
-            optimizer.zero_grad()
-
-            # Q(s,a)
-            q_value = exp_policy(obs)[action]
-
-            # TD Target = r + gamma * max Q(s',.)
-            next_state_q_values = target_policy(new_obs)
-            next_state_q_values = next_state_q_values.detach()
-            td_target = reward + gamma * torch.max(next_state_q_values)
-
-            if finished:
-                td_target = torch.tensor(reward).to(device, dtype=torch.float)
-
-            # Calculate loss between guess and target
-            loss = mse_loss(q_value, td_target)
+            # Store experience in replay buffer
+            replay_buffer.append((obs, action, reward, new_obs, finished))
             
-            # Optimize
-            loss.backward()
-            optimizer.step()
-
             obs = new_obs
             ep_reward += reward
-            ep_loss.append(loss.item())
 
-        avg_loss = np.mean(ep_loss)
-        
+            # Fill it first!
+            if len(replay_buffer) < buffer_size:
+                continue
+
+            # Sample experiences
+            batch = replay_buffer.sample(batch_size)
+            loss = calculate_loss(device, exp_policy, target_policy, batch, gamma, criterion_loss)
+            
+            # Optimize
+            optimiser.zero_grad()
+            loss.backward()
+            optimiser.step()
+
+        if len(replay_buffer) < buffer_size:
+            continue
+
         if (ep % 1 == 0):
             print('Total reward:', ep_reward)
-            print('Avg Loss:', avg_loss)
             print('Epsilon:', epsilon)
 
         epsilon -= 0.00002
         rewards.append(ep_reward)
-        losses.append(avg_loss)
 
     return target_policy, rewards
 
 if __name__ == '__main__':
-    env = gym.make('MountainCar-v0')
+    env = gym.make('CartPole-v0') #('MountainCar-v0')
     num_episodes = 5000
     gamma = 0.98
-    epsilon = 0.6
+    epsilon = 0.2
     learning_rate = 0.01
+    buffer_size = 1000
+    batch_size = 32
 
     start_time = time.time()
-    q_net, rewards = q_learning(env, num_episodes, gamma, epsilon, learning_rate)
+    q_net, rewards = q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, batch_size)
     end_time = time.time()
 
     print('Q-Learning (linear approx) took', end_time - start_time, 'seconds')
