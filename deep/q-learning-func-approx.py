@@ -154,19 +154,19 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
             print('Total reward:', ep_reward)
             print('Epsilon:', epsilon)
 
-        epsilon -= 0.00002
+        #epsilon -= 0.0001
         rewards.append(ep_reward)
 
     return target_policy, rewards
 
 if __name__ == '__main__':
     env = gym.make('CartPole-v0') #('MountainCar-v0')
-    num_episodes = 600
+    num_episodes = 3000
     gamma = 0.98
-    epsilon = 0.4
+    epsilon = 0.1
     learning_rate = 0.01
-    buffer_size = 1000
-    batch_size = 32
+    buffer_size = 3000
+    batch_size = 128
 
     start_time = time.time()
     q_net, rewards = q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, batch_size)
