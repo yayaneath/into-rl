@@ -164,7 +164,7 @@ if __name__ == '__main__':
     num_episodes = 3000
     gamma = 0.98
     epsilon = 0.1
-    learning_rate = 0.01
+    learning_rate = 0.001
     buffer_size = 3000
     batch_size = 128
 
