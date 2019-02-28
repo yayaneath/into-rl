@@ -11,9 +11,9 @@ RENDER_ENV = True
 class Net(nn.Module):
     def __init__(self, input_size, output_size):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(input_size, int(input_size / 2))
+        self.fc1 = nn.Linear(input_size, int(input_size * 10))
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(int(input_size / 2), output_size)
+        self.fc2 = nn.Linear(int(input_size * 10), output_size)
 
     def forward(self, x):
         out = self.fc1(x)
@@ -24,7 +24,7 @@ class Net(nn.Module):
 
 if __name__ == '__main__':
     #model_file = sys.argv[1]
-    model_file = 'qnet-27-02-19'
+    model_file = 'aa'
 
     env = gym.make('CartPole-v0') #('MountainCar-v0')
 
