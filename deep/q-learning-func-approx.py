@@ -59,24 +59,32 @@ def pick_e_greedy_action(q_net, state, actions, epsilon):
 
     return action
 
-def calculate_loss(device, exp_policy, target_policy, experiences, gamma, criterion_loss):
+def calculate_loss(device, exp_policy, target_policy, experiences, gamma, criterion_loss, double=True):
     loss = 0
 
     for state, action, reward, next_state, done in experiences:
-        # Q(s,a)
+        # Q_exp(s,a)
         q_value = exp_policy(state)[action]
 
-        # TD Target = r + gamma * max Q(s',.)
-        next_state_q_values = target_policy(next_state)
-        next_state_q_values = next_state_q_values.detach()
-        td_target = reward + gamma * torch.max(next_state_q_values)
-
         if done:
+            # TD Target = r
             td_target = torch.tensor(reward).to(device, dtype=torch.float)
+        else:
+            if double:
+                # TD Target = r + gamma * Q_target(s', arg_max Q_exp(s', .))
+                next_action = torch.argmax(exp_policy(state))
+                next_state_action_q_value = target_policy(next_state)[next_action]
+            else:
+                # TD Target = r + gamma * max Q_target(s',.)
+                next_state_q_values = target_policy(next_state)
+                #next_state_q_values = next_state_q_values.detach()
+                next_state_action_q_value = torch.max(next_state_q_values)
+
+            td_target = reward + gamma * next_state_action_q_value
 
         # Calculate loss between guess and target
         loss = loss + criterion_loss(q_value, td_target)
-        
+
     loss = loss / len(experiences)
 
     return loss
@@ -108,7 +116,7 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
         obs = torch.from_numpy(obs).to(device, dtype=torch.float)
 
         while not finished:            
-            # Chose a using policy derived from Q (e-greedy)
+            # Chose a using policy derived from Q_exp (e-greedy)
             action = pick_e_greedy_action(exp_policy, obs, env_actions, epsilon)
 
             # Take action a and observe r, s'
@@ -140,7 +148,7 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
             if RENDER_ENV:
                 env.render()
             
-            # Chose a using policy derived from Q (e-greedy)
+            # Chose a using policy derived from Q_exp (e-greedy)
             action = pick_e_greedy_action(exp_policy, obs, env_actions, epsilon)
 
             # Take action a and observe r, s'
