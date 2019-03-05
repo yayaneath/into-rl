@@ -77,10 +77,11 @@ def calculate_loss(device, exp_policy, target_policy, experiences, gamma, criter
             else:
                 # TD Target = r + gamma * max Q_target(s',.)
                 next_state_q_values = target_policy(next_state)
-                #next_state_q_values = next_state_q_values.detach()
                 next_state_action_q_value = torch.max(next_state_q_values)
 
             td_target = reward + gamma * next_state_action_q_value
+
+        td_target = td_target.detach()
 
         # Calculate loss between guess and target
         loss = loss + criterion_loss(q_value, td_target)
@@ -190,7 +191,7 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
 
 if __name__ == '__main__':
     env = gym.make('CartPole-v0') #('MountainCar-v0')
-    num_episodes = 3000
+    num_episodes = 2000
     gamma = 0.999
     epsilon = 0.8
     learning_rate = 0.0001
