@@ -24,7 +24,7 @@ class Net(nn.Module):
 
 if __name__ == '__main__':
     #model_file = sys.argv[1]
-    model_file = 'qnet-05-03-19'
+    model_file = 'per-qnet-13-03-19'
 
     env = gym.make('CartPole-v0') #('MountainCar-v0')
 
