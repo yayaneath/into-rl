@@ -130,7 +130,6 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
             
             obs = new_obs
 
-
     # Start training
     rewards = []
 
@@ -190,7 +189,7 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
     return target_policy, rewards
 
 if __name__ == '__main__':
-    env = gym.make('CartPole-v0') #('MountainCar-v0')
+    env = gym.make('MountainCar-v0') #'MountainCar-v0' #'CartPole-v0'
     num_episodes = 2000
     gamma = 0.999
     epsilon = 0.8
