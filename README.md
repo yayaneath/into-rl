@@ -7,3 +7,4 @@ A set of implementations of RL algorithms coded while I introduce myself deep in
 - [Deep RL Bootcamp (2017)](https://sites.google.com/view/deep-rl-bootcamp/lectures)
 - [Spinning Up in Deep RL (2018) by OpenAI](https://spinningup.openai.com/en/latest/)
 - ["Hands-on Deep Reinforcement Learning" (2018) by Maxim Lapan](https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On)
+- ["Reinforcement Learning Specialization" (2019) by Alberta Machine Intelligence Institute (Amii)](https://www.coursera.org/specializations/reinforcement-learning)
