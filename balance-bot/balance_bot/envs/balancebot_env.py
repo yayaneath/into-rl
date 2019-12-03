@@ -18,10 +18,10 @@ class BalancebotEnv(gym.Env):
   def __init__(self):
     self._observation = []
 
-    # Discrete possible actions:
-    #   specific velocity changes
-    self._vel_change = [-1.0, -0.5, -0.2, -0.01, 0.0, 0.01, 0.2, 0.5, 1.0]
-    self.action_space = spaces.Discrete(len(self._vel_change))
+    # Continuous actions
+    self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(1,))
+    self._max_speed = 5.0
+    self._min_speed = -5.0
     
     # Continuous 3D space:
     #   pitch (inclination of cube)
@@ -83,7 +83,10 @@ class BalancebotEnv(gym.Env):
 
   # Actions in Pybullet are asigned here
   def _assign_throttle(self, action):
-    self.vel += self._vel_change[action]
+    self.vel += action
+
+    if self.vel > self._max_speed: self.vel = self._max_speed
+    if self.vel < self._min_speed: self.vel = self._min_speed
 
     p.setJointMotorControl2(bodyUniqueId=self.botId,
                             jointIndex=0,
@@ -116,6 +119,107 @@ class BalancebotEnv(gym.Env):
     cubePos, _ = p.getBasePositionAndOrientation(self.botId)
 
     # Cube is too low or we have run enough steps with the cube upright
-    done = cubePos[2] < 0.15 or self._envStepCounter >= 1500
+    done = cubePos[2] < 0.15# or self._envStepCounter >= 1500
+
+    return done
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# This is the version with discrete action space
+
+class BalancebotDiscEnv(gym.Env):
+  metadata = {'render.modes': ['human', 'rgb_array'],
+              'video.frames_per_second': 50
+             }
+
+  def __init__(self):
+    self._observation = []
+
+    # Discrete possible actions:
+    #   specific velocity changes
+    self._vel_change = [-1.0, -0.5, -0.2, -0.01, 0.0, 0.01, 0.2, 0.5, 1.0]
+    self.action_space = spaces.Discrete(len(self._vel_change))
+    
+    self.observation_space = spaces.Box(np.array([-math.pi, -math.pi, -5]),
+                                        np.array([math.pi, math.pi, 5]))
+    self.physicsClient = p.connect(p.GUI)
+    p.setAdditionalSearchPath(pybullet_data.getDataPath())
+
+    self.seed()
+
+  def step(self, action):
+    self._assign_throttle(action)
+    p.stepSimulation()
+    self._observation = self._compute_observation()
+    reward = self._compute_reward()
+    done = self._compute_done()
+
+    self._envStepCounter += 1
+
+    return np.array(self._observation), reward, done, {}
+
+  def reset(self):
+    self.vel = 0.0
+    self._envStepCounter = 0
+
+    p.resetSimulation()
+    p.setGravity(0, 0, -9.8)
+    p.setTimeStep(0.01)
+
+    planeId = p.loadURDF('plane.urdf')
+    cubeStartPos = [0, 0, 0.001]
+    cubeStartOrn = p.getQuaternionFromEuler([0.0, 0, 0])
+
+    path = os.path.abspath(os.path.dirname(__file__))
+    self.botId = p.loadURDF(os.path.join(path, 'balancebot_simple.xml'),
+                            cubeStartPos,
+                            cubeStartOrn)
+
+    self._observation = self._compute_observation()
+
+    return np.array(self._observation)
+
+
+  def render(self, mode='human', close='False'):
+    pass
+
+  def seed(self, seed=None):
+    self.np_random, seed = seeding.np_random(seed)
+
+    return [seed]
+
+  def _assign_throttle(self, action):
+    self.vel += self._vel_change[action]
+
+    p.setJointMotorControl2(bodyUniqueId=self.botId,
+                            jointIndex=0,
+                            controlMode=p.VELOCITY_CONTROL,
+                            targetVelocity=self.vel)
+    p.setJointMotorControl2(bodyUniqueId=self.botId,
+                            jointIndex=1,
+                            controlMode=p.VELOCITY_CONTROL,
+                            targetVelocity=-self.vel)
+
+  def _compute_observation(self):
+    _, cubeOrn = p.getBasePositionAndOrientation(self.botId)
+    cubeEuler = p.getEulerFromQuaternion(cubeOrn)
+    _, angular = p.getBaseVelocity(self.botId)
+
+    return [cubeEuler[0], angular[0], self.vel]
+
+  def _compute_reward(self):
+    _, cubeOrn = p.getBasePositionAndOrientation(self.botId)
+    cubeEuler = p.getEulerFromQuaternion(cubeOrn)
+
+    reward_cube = 1 - abs(cubeEuler[0])
+    reward_vel = abs(self.vel - 0.0)
+    cube_weight = 0.1
+    vel_weight = 0.01
+
+    return reward_cube * cube_weight - reward_vel * vel_weight
+
+  def _compute_done(self):
+    cubePos, _ = p.getBasePositionAndOrientation(self.botId)
+
+    done = cubePos[2] < 0.15# or self._envStepCounter >= 1500
 
     return done
