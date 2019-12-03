@@ -31,6 +31,8 @@ class BalancebotEnv(gym.Env):
                                         np.array([math.pi, math.pi, self._max_speed]))
 
     # Pybullet physics!
+    # p.DIRECT or p.GUI
+    # Use p.DIRECT in case of willing to create multiple simultaneous environments
     self.physicsClient = p.connect(p.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
@@ -119,7 +121,7 @@ class BalancebotEnv(gym.Env):
     cubePos, _ = p.getBasePositionAndOrientation(self.botId)
 
     # Cube is too low or we have run enough steps with the cube upright
-    done = cubePos[2] < 0.15# or self._envStepCounter >= 1500
+    done = cubePos[2] < 0.15 or self._envStepCounter >= 20000
 
     return done
 
@@ -136,12 +138,17 @@ class BalancebotDiscEnv(gym.Env):
 
     # Discrete possible actions:
     #   specific velocity changes
-    self._vel_change = [-1.0, -0.5, -0.2, -0.01, 0.0, 0.01, 0.2, 0.5, 1.0]
+    self._vel_change = [-0.3, 0.3]
+    self._min_speed = -5.0
+    self._max_speed = 5.0
     self.action_space = spaces.Discrete(len(self._vel_change))
     
-    self.observation_space = spaces.Box(np.array([-math.pi, -math.pi, -5]),
-                                        np.array([math.pi, math.pi, 5]))
-    self.physicsClient = p.connect(p.GUI)
+    self.observation_space = spaces.Box(np.array([-math.pi, -math.pi, self._min_speed]),
+                                        np.array([math.pi, math.pi, self._max_speed]))
+    
+    # p.DIRECT or p.GUI
+    # Use p.DIRECT in case of willing to create multiple simultaneous environments
+    self.physicsClient = p.connect(p.DIRECT) 
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
     self.seed()
@@ -189,6 +196,9 @@ class BalancebotDiscEnv(gym.Env):
 
   def _assign_throttle(self, action):
     self.vel += self._vel_change[action]
+
+    if self.vel > self._max_speed: self.vel = self._max_speed
+    if self.vel < self._min_speed: self.vel = self._min_speed
 
     p.setJointMotorControl2(bodyUniqueId=self.botId,
                             jointIndex=0,

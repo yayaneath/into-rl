@@ -16,7 +16,7 @@ import torch.nn.functional as F
 
 import balance_bot
 
-RENDER_ENV = False
+RENDER_ENV = True
 
 class NaivePrioritizedBuffer:
     def __init__(self, capacity, prob_alpha=0.6):
@@ -177,7 +177,7 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
 
     for ep in range(num_episodes + 1):
         if (ep % 1 == 0):
-            print('=> Evaluating episode', ep)
+            print('=> Training episode', ep)
 
         finished = False
         ep_reward = 0.0
@@ -213,7 +213,7 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
             target_policy.load_state_dict(exp_policy.state_dict())
             target_policy.eval()
 
-        epsilon -= 0.0004
+        #epsilon -= 0.0004
         rewards.append(ep_reward)
 
     target_policy.load_state_dict(exp_policy.state_dict())
@@ -222,10 +222,10 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
     return target_policy, rewards
 
 if __name__ == '__main__':
-    env = gym.make('balancebotdisc-v0')
+    env = gym.make('balancebotdisc-v0') #CartPole-v0 #balancebotdisc-v0
     num_episodes = 1000
     gamma = 0.99
-    epsilon = 0.8
+    epsilon = 0.2#0.8
     learning_rate = 0.001
     buffer_size = 10000
     batch_size = 256#128

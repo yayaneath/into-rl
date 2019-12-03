@@ -25,6 +25,3 @@ while not done:
     total_reward += reward
 
     print(total_reward)
-
-    if total_reward > 2000:
-        break

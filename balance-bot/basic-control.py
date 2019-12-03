@@ -9,16 +9,11 @@ def run_episode(env, params):
     done = False
 
     total_reward = 0
-    action = 4
 
     for i in range(MAX_STEPS):
         env.render()
 
-        action = action - 1 if np.matmul(params, obs) < 0 else action + 1
-
-        if action < 0: action = 0
-        if action >= env.action_space.n: action = env.action_space.n - 1
-
+        action = 0 if np.matmul(params, obs) < 0 else 1
         obs, reward, done, _ = env.step(action)
         total_reward += reward
 
