@@ -59,6 +59,8 @@ def pick_e_greedy_action(q_net, state, actions, epsilon):
 
     return action
 
+# This is an inefficient implementation since the calculus could be done without the 'for' loop
+# Still, it is easier to see the computation of the TD target and the loss in this way
 def calculate_loss(device, exp_policy, target_policy, experiences, gamma, criterion_loss, double=True):
     loss = 0
 

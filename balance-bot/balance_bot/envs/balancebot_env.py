@@ -20,15 +20,15 @@ class BalancebotEnv(gym.Env):
 
     # Continuous actions
     self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(1,))
-    self._max_speed = 5.0
     self._min_speed = -5.0
+    self._max_speed = 5.0
     
     # Continuous 3D space:
     #   pitch (inclination of cube)
     #   gyro (velocity of cube)
     #   commanded speed
-    self.observation_space = spaces.Box(np.array([-math.pi, -math.pi, -5]),
-                                        np.array([math.pi, math.pi, 5]))
+    self.observation_space = spaces.Box(np.array([-math.pi, -math.pi, self._min_speed]),
+                                        np.array([math.pi, math.pi, self._max_speed]))
 
     # Pybullet physics!
     self.physicsClient = p.connect(p.GUI)
@@ -220,6 +220,6 @@ class BalancebotDiscEnv(gym.Env):
   def _compute_done(self):
     cubePos, _ = p.getBasePositionAndOrientation(self.botId)
 
-    done = cubePos[2] < 0.15# or self._envStepCounter >= 1500
+    done = cubePos[2] < 0.15 or self._envStepCounter >= 20000
 
     return done

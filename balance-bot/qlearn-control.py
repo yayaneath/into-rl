@@ -16,30 +16,76 @@ import torch.nn.functional as F
 
 import balance_bot
 
-RENDER_ENV = True
+RENDER_ENV = False
 
-class ExperienceReplay:
-    def __init__(self, capacity):
-        self.buffer = deque(maxlen=capacity)
+class NaivePrioritizedBuffer:
+    def __init__(self, capacity, prob_alpha=0.6):
+        self.prob_alpha = prob_alpha
+        self.capacity = capacity
+        self.buffer = []
+        self.pos = 0
+        self.priorities = np.zeros((capacity,), dtype=np.float32)
+    
+    def push(self, state, action, reward, next_state, done):
+        state = np.expand_dims(state, 0)
+        next_state = np.expand_dims(next_state, 0)
+        
+        max_prio = self.priorities.max() if self.buffer else 1.0
+        
+        if len(self.buffer) < self.capacity:
+            self.buffer.append((state, action, reward, next_state, done))
+        else:
+            self.buffer[self.pos] = (state, action, reward, next_state, done)
+        
+        self.priorities[self.pos] = max_prio
+        self.pos = (self.pos + 1) % self.capacity
+    
+    def sample(self, batch_size, beta=0.4):
+        if len(self.buffer) == self.capacity:
+            prios = self.priorities
+        else:
+            prios = self.priorities[:self.pos]
+        
+        probs = prios ** self.prob_alpha
+        probs /= probs.sum()
+        
+        indices = np.random.choice(len(self.buffer), batch_size, p=probs)
+        samples = [self.buffer[idx] for idx in indices]
+        
+        total = len(self.buffer)
+        weights = (total * probs[indices]) ** (-beta)
+        weights /= weights.max()
+        weights = np.array(weights, dtype=np.float32)
+        
+        states = []
+        actions = []
+        rewards = []
+        next_states = []
+        dones = []
 
-    def append(self, experience):
-        self.buffer.append(experience)
+        for experience in samples:
+            states.append(np.concatenate(experience[0]))
+            actions.append(experience[1])
+            rewards.append(experience[2])
+            next_states.append(np.concatenate(experience[3]))
+            dones.append(experience[4])
+        
+        return np.array(states), np.array(actions), np.array(rewards), np.array(next_states), \
+            np.array(dones, dtype=np.float32), indices, weights
+    
+    def update_priorities(self, batch_indices, batch_priorities):
+        for idx, prio in zip(batch_indices, batch_priorities):
+            self.priorities[idx] = prio
 
     def __len__(self):
         return len(self.buffer)
 
-    def sample(self, batch_size):
-        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
-        batch = [self.buffer[idx] for idx in indices]
-
-        return batch
-
 class Net(nn.Module):
     def __init__(self, input_size, output_size):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(input_size, int(input_size * 10))
+        self.fc1 = nn.Linear(input_size, int(input_size * 2))
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(int(input_size * 10), output_size)
+        self.fc2 = nn.Linear(int(input_size * 2), output_size)
 
     def forward(self, x):
         out = self.fc1(x)
@@ -48,51 +94,49 @@ class Net(nn.Module):
 
         return out
 
-def pick_e_greedy_action(q_net, state, actions, epsilon):
+def pick_e_greedy_action(device, q_net, state, actions, epsilon):
     prob = np.random.rand()
     action = -1
 
     if prob < epsilon:
         action = np.random.choice(actions)
     else:
+        state = torch.from_numpy(state).to(device, dtype=torch.float)
+        
         with torch.no_grad():
             _, action = torch.max(q_net(state), 0)
             action = action.item()
 
     return action
 
-def calculate_loss(device, exp_policy, target_policy, experiences, gamma, criterion_loss, double=True):
-    loss = 0
+def compute_td_loss(device, optimiser, exp_policy, target_policy, replay_buffer, batch_size, gamma, beta):
+    state, action, reward, next_state, done, indices, weights = replay_buffer.sample(batch_size, beta) 
 
-    for state, action, reward, next_state, done in experiences:
-        # Q_exp(s,a)
-        q_value = exp_policy(state)[action]
+    state = torch.from_numpy(state).to(device, dtype=torch.float)
+    next_state = torch.from_numpy(next_state).to(device, dtype=torch.float)
+    action = torch.from_numpy(action).to(device, dtype=torch.long)
+    reward = torch.from_numpy(reward).to(device, dtype=torch.float)
+    done = torch.from_numpy(done).to(device, dtype=torch.float)
+    weights = torch.from_numpy(weights).to(device, dtype=torch.float)
 
-        if done:
-            # TD Target = r
-            td_target = torch.tensor(reward).to(device, dtype=torch.float)
-        else:
-            if double:
-                # TD Target = r + gamma * Q_target(s', arg_max Q_exp(s', .))
-                next_action = torch.argmax(exp_policy(state))
-                next_state_action_q_value = target_policy(next_state)[next_action]
-            else:
-                # TD Target = r + gamma * max Q_target(s',.)
-                next_state_q_values = target_policy(next_state)
-                next_state_action_q_value = torch.max(next_state_q_values)
+    q_values = exp_policy(state)
+    next_q_values = exp_policy(next_state)
+    next_q_state_values = target_policy(next_state) 
 
-            td_target = reward + gamma * next_state_action_q_value
+    q_value = q_values.gather(1, action.unsqueeze(1)).squeeze(1)
+    next_q_value = next_q_state_values.gather(1, torch.max(next_q_values, 1)[1].unsqueeze(1)).squeeze(1)
+    expected_q_value = reward + gamma * next_q_value * (1 - done)
+    
+    loss = (q_value - expected_q_value.detach()).pow(2) * weights
+    prios = loss + 1e-5
+    loss = loss.mean()
+        
+    optimiser.zero_grad()
+    loss.backward()
+    replay_buffer.update_priorities(indices, prios.data.cpu().numpy())
+    optimiser.step()
 
-        td_target = td_target.detach()
-
-        # Calculate loss between guess and target
-        loss = loss + criterion_loss(q_value, td_target)
-
-    loss = loss / len(experiences)
-
-    return loss
-
-def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, batch_size):
+def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, batch_size, beta):
     features_size = env.observation_space.shape[0]
     act_space_size = env.action_space.n
     env_actions = range(env.action_space.n)
@@ -102,12 +146,11 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
     # We need an e-greedy exploratory policy and a target policy
     exp_policy = Net(features_size, act_space_size).to(device)
     target_policy = Net(features_size, act_space_size).to(device)
-    
-    criterion_loss = nn.MSELoss()
+
     optimiser = optim.Adam(exp_policy.parameters(), lr=learning_rate)
 
     # Initialise replay buffer
-    replay_buffer = ExperienceReplay(buffer_size)
+    replay_buffer = NaivePrioritizedBuffer(buffer_size)
 
     print('Filling replay buffer...')
 
@@ -116,19 +159,16 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
 
         # Initialize s
         obs = env.reset()
-        obs = torch.from_numpy(obs).to(device, dtype=torch.float)
 
         while not finished:            
             # Chose a using policy derived from Q_exp (e-greedy)
-            action = pick_e_greedy_action(exp_policy, obs, env_actions, epsilon)
+            action = pick_e_greedy_action(device, exp_policy, obs, env_actions, epsilon)
 
             # Take action a and observe r, s'
             new_obs, reward, finished, _ = env.step(action)
 
-            new_obs = torch.from_numpy(new_obs).to(device, dtype=torch.float)
-
             # Store experience in replay buffer
-            replay_buffer.append((obs, action, reward, new_obs, finished))
+            replay_buffer.push(obs, action, reward, new_obs, finished)
             
             obs = new_obs
 
@@ -144,41 +184,32 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
 
         # Initialize s
         obs = env.reset()
-        obs = torch.from_numpy(obs).to(device, dtype=torch.float)
 
         while not finished:
             if RENDER_ENV:
                 env.render()
             
             # Chose a using policy derived from Q_exp (e-greedy)
-            action = pick_e_greedy_action(exp_policy, obs, env_actions, epsilon)
+            action = pick_e_greedy_action(device, exp_policy, obs, env_actions, epsilon)
 
             # Take action a and observe r, s'
             new_obs, reward, finished, _ = env.step(action)
 
-            new_obs = torch.from_numpy(new_obs).to(device, dtype=torch.float)
-
             # Store experience in replay buffer
-            replay_buffer.append((obs, action, reward, new_obs, finished))
+            replay_buffer.push(obs, action, reward, new_obs, finished)
             
             obs = new_obs
             ep_reward += reward
 
-            # Sample experiences
-            batch = replay_buffer.sample(batch_size)
-            loss = calculate_loss(device, exp_policy, target_policy, batch, gamma, criterion_loss)
-            
-            # Optimize
-            optimiser.zero_grad()
-            loss.backward()
-            optimiser.step()
+            # Optimise
+            compute_td_loss(device, optimiser, exp_policy, target_policy, replay_buffer, batch_size, gamma, beta)
 
         if (ep % 1 == 0):
             print('Total reward:', ep_reward)
             print('Epsilon:', epsilon)
 
         # Update the target policy every X episodes
-        if (ep % 250 == 0):
+        if (ep % 30 == 0):
             target_policy.load_state_dict(exp_policy.state_dict())
             target_policy.eval()
 
@@ -191,16 +222,17 @@ def q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, ba
     return target_policy, rewards
 
 if __name__ == '__main__':
-    env = gym.make('balancebot-v0')
-    num_episodes = 2000
-    gamma = 0.999
+    env = gym.make('balancebotdisc-v0')
+    num_episodes = 1000
+    gamma = 0.99
     epsilon = 0.8
-    learning_rate = 0.0001
-    buffer_size = 50000
-    batch_size = 128
+    learning_rate = 0.001
+    buffer_size = 10000
+    batch_size = 256#128
+    beta = 0.6
 
     start_time = time.time()
-    q_net, rewards = q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, batch_size)
+    q_net, rewards = q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, batch_size, beta)
     end_time = time.time()
 
     print('Q-Learning (linear approx) took', end_time - start_time, 'seconds')
