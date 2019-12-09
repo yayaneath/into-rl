@@ -3,12 +3,6 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 
-from collections import deque
-
-import sklearn.preprocessing
-import sklearn.pipeline
-from sklearn.kernel_approximation import RBFSampler
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -235,7 +229,7 @@ if __name__ == '__main__':
     q_net, rewards = q_learning(env, num_episodes, gamma, epsilon, learning_rate, buffer_size, batch_size, beta)
     end_time = time.time()
 
-    print('Q-Learning (linear approx) took', end_time - start_time, 'seconds')
+    print('Q-Learning took', end_time - start_time, 'seconds')
 
     file_name = 'q-net-' + str(np.mean(rewards)) + '-' + str(end_time)
     torch.save(q_net.state_dict(), file_name)

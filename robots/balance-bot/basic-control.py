@@ -20,8 +20,6 @@ def run_episode(env, params):
         if done:
             break
         
-        print(i)
-
     return total_reward
 
 env = gym.make('balancebotdisc-v0')

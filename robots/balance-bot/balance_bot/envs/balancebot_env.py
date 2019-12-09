@@ -121,7 +121,7 @@ class BalancebotEnv(gym.Env):
     cubePos, _ = p.getBasePositionAndOrientation(self.botId)
 
     # Cube is too low or we have run enough steps with the cube upright
-    done = cubePos[2] < 0.15 or self._envStepCounter >= 20000
+    done = cubePos[2] < 0.15 or self._envStepCounter >= 200000
 
     return done
 
