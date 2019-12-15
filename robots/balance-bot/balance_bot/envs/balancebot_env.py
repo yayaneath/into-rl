@@ -138,7 +138,7 @@ class BalancebotDiscEnv(gym.Env):
 
     # Discrete possible actions:
     #   specific velocity changes
-    self._vel_change = [-0.3, 0.3]
+    self._vel_change = [-0.5, -0.3, -0.1, 0.0, 0.1, 0.3, 0.5]
     self._min_speed = -5.0
     self._max_speed = 5.0
     self.action_space = spaces.Discrete(len(self._vel_change))
@@ -148,7 +148,7 @@ class BalancebotDiscEnv(gym.Env):
     
     # p.DIRECT or p.GUI
     # Use p.DIRECT in case of willing to create multiple simultaneous environments
-    self.physicsClient = p.connect(p.DIRECT) 
+    self.physicsClient = p.connect(p.GUI) 
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
     self.seed()
